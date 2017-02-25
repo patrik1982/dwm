@@ -36,6 +36,7 @@
 							<tool id="cdt.managedbuild.tool.gnu.cross.c.linker.1837717482" name="Cross GCC Linker" superClass="cdt.managedbuild.tool.gnu.cross.c.linker">
 								<option id="gnu.c.link.option.libs.946455400" name="Libraries (-l)" superClass="gnu.c.link.option.libs" useByScannerDiscovery="false" valueType="libs">
 									<listOptionValue builtIn="false" value="X11"/>
+									<listOptionValue builtIn="false" value="pthread"/>
 									<listOptionValue builtIn="false" value="Xinerama"/>
 									<listOptionValue builtIn="false" value="fontconfig"/>
 									<listOptionValue builtIn="false" value="Xft"/>
@@ -83,7 +84,7 @@
 								<option id="gnu.c.compiler.option.preprocessor.def.symbols.513325835" name="Defined symbols (-D)" superClass="gnu.c.compiler.option.preprocessor.def.symbols" useByScannerDiscovery="false" valueType="definedSymbols">
 									<listOptionValue builtIn="false" value="XINERAMA"/>
 								</option>
-								<option id="gnu.c.compiler.option.dialect.std.1539274176" superClass="gnu.c.compiler.option.dialect.std" value="gnu.c.compiler.dialect.c11" valueType="enumerated"/>
+								<option id="gnu.c.compiler.option.dialect.std.1539274176" name="Language standard" superClass="gnu.c.compiler.option.dialect.std" useByScannerDiscovery="true" value="gnu.c.compiler.dialect.c11" valueType="enumerated"/>
 								<inputType id="cdt.managedbuild.tool.gnu.c.compiler.input.1527177838" superClass="cdt.managedbuild.tool.gnu.c.compiler.input"/>
 							</tool>
 							<tool id="cdt.managedbuild.tool.gnu.cross.cpp.compiler.891553142" name="Cross G++ Compiler" superClass="cdt.managedbuild.tool.gnu.cross.cpp.compiler">
@@ -93,6 +94,7 @@
 							<tool id="cdt.managedbuild.tool.gnu.cross.c.linker.102163623" name="Cross GCC Linker" superClass="cdt.managedbuild.tool.gnu.cross.c.linker">
 								<option id="gnu.c.link.option.libs.992046806" name="Libraries (-l)" superClass="gnu.c.link.option.libs" useByScannerDiscovery="false" valueType="libs">
 									<listOptionValue builtIn="false" value="X11"/>
+									<listOptionValue builtIn="false" value="pthread"/>
 									<listOptionValue builtIn="false" value="Xinerama"/>
 									<listOptionValue builtIn="false" value="fontconfig"/>
 									<listOptionValue builtIn="false" value="Xft"/>

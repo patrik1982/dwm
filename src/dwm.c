@@ -31,6 +31,8 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 
+#include <pthread.h>
+
 #include <time.h>
 
 #include <X11/cursorfont.h>
@@ -278,69 +280,88 @@ static Window root, wmcheckwin;
 /* compile-time check if all tags fit into an unsigned int bit array. */
 struct NumTags { char limitexceeded[LENGTH(tags) > 31 ? -1 : 1]; };
 
-void read_statusbar_text(char* s) {
+static int updcnt = 0;
+pthread_t threads[5];
+static int num_threads = 0;
+
+void *statusbar() {
+
+	char statusbar_text[500];
 	time_t rawtime;
 	struct tm* timeinfo;
-	time(&rawtime);
-	timeinfo = localtime(&rawtime);
 
-	s[0] = '\0';
+	for(;;) {
+		//updcnt += 1;
 
-	// Read date
-	strcat(s, " \uf073 "); // Calendar
-	char *datestr = &s[strlen(s)];
-	strftime(datestr, 100, "%a, %b %d", timeinfo);
+		time(&rawtime);
+		timeinfo = localtime(&rawtime);
 
-	// Read time
-	strcat(s, " \uf017 "); // Clock
-	char *timestr = &s[strlen(s)];
-	strftime(timestr, 100, "%R", timeinfo);
+		statusbar_text[0] = '\0';
 
-	// Read average CPU load
-	strcat(s, " \uf2db "); // Cpu
-	char *cpustr = &s[strlen(s)];
-	FILE *cpuf = fopen("/proc/loadavg", "r");
-	float load;
-	int load_percentage;
-	fscanf(cpuf, "%f", &load);
-	load_percentage = (int)(load * 100 / (float)sysconf(_SC_NPROCESSORS_ONLN));
-	sprintf(cpustr, "%d%%", load_percentage);
-	close(cpuf);
+		// Read date
+		strcat(statusbar_text, " \uf073 "); // Calendar
+		char *datestr = &statusbar_text[strlen(statusbar_text)];
+		strftime(datestr, 100, "%a, %b %d", timeinfo);
 
-	// Read memory usage
-	strcat(s, " \uf2dc "); // Memory
-	char *memstr = &s[strlen(s)];
-	FILE *memf = fopen("/proc/meminfo", "r");
-	char this_string[100];
-	int total = 0;
-	int used  = 0;
-	int data;
-	int status = 0;
-	while(fscanf(memf, "%s", this_string) != EOF && status != 0x0f) {
-		if (strcmp(this_string, "MemTotal:") == 0) {
-			fscanf(memf, "%d", &data);
-			total = data;
-			used += data;
-			status |= 0x01;
+		// Read time
+		strcat(statusbar_text, " \uf017 "); // Clock
+		char *timestr = &statusbar_text[strlen(statusbar_text)];
+		strftime(timestr, 100, "%R", timeinfo);
+
+		// Read average CPU load
+		strcat(statusbar_text, " \uf2db "); // Cpu
+		char *cpustr = &statusbar_text[strlen(statusbar_text)];
+		FILE *cpuf = fopen("/proc/loadavg", "r");
+		float load;
+		int load_percentage;
+		fscanf(cpuf, "%f", &load);
+		load_percentage = (int)(load * 100 / (float)sysconf(_SC_NPROCESSORS_ONLN));
+		sprintf(cpustr, "%d%%", load_percentage);
+		fclose(cpuf);
+
+		// Read memory usage
+		strcat(statusbar_text, " \uf2dc "); // Memory
+		char *memstr = &statusbar_text[strlen(statusbar_text)];
+		FILE *memf = fopen("/proc/meminfo", "r");
+		char this_string[100];
+		int total = 0;
+		int used  = 0;
+		int data;
+		int status = 0;
+		while(fscanf(memf, "%s", this_string) != EOF && status != 0x0f) {
+			if (strcmp(this_string, "MemTotal:") == 0) {
+				fscanf(memf, "%d", &data);
+				total = data;
+				used += data;
+				status |= 0x01;
+			}
+			if (strcmp(this_string, "MemFree:") == 0) {
+				fscanf(memf, "%d", &data);
+				used -= data;
+				status |= 0x02;
+			}
+			if (strcmp(this_string, "Buffers:") == 0) {
+				fscanf(memf, "%d", &data);
+				used -= data;
+				status |= 0x04;
+			}
+			if (strcmp(this_string, "Cached:") == 0) {
+				fscanf(memf, "%d", &data);
+				used -= data;
+				status |= 0x08;
+			}
 		}
-		if (strcmp(this_string, "MemFree:") == 0) {
-			fscanf(memf, "%d", &data);
-			used -= data;
-			status |= 0x02;
-		}
-		if (strcmp(this_string, "Buffers:") == 0) {
-			fscanf(memf, "%d", &data);
-			used -= data;
-			status |= 0x04;
-		}
-		if (strcmp(this_string, "Cached:") == 0) {
-			fscanf(memf, "%d", &data);
-			used -= data;
-			status |= 0x08;
-		}
+		fclose(memf);
+		sprintf(memstr, "%d%%", used * 100 / total);
+		//sprintf(memstr, "%d times", updcnt);
+
+		XStoreName(dpy, root, statusbar_text);
+		XFlush(dpy);
+		//printf("%s\n", statusbar_text);
+		sleep(1);
 	}
-	close(memf);
-	sprintf(memstr, "%d%%", used * 100 / total);
+
+	pthread_exit(NULL);
 }
 
 /* function implementations */
@@ -1646,6 +1667,9 @@ setup(void)
 	/* init bars */
 	updatebars();
 	updatestatus();
+
+	pthread_create(&threads[num_threads++], NULL, statusbar, NULL);
+
 	/* supporting window for NetWMCheck */
 	wmcheckwin = XCreateSimpleWindow(dpy, root, 0, 0, 1, 1, 0, 0, 0);
 	XChangeProperty(dpy, wmcheckwin, netatom[NetWMCheck], XA_WINDOW, 32,
@@ -2072,10 +2096,12 @@ void
 updatestatus(void)
 {
 	if (!gettextprop(root, XA_WM_NAME, stext, sizeof(stext))) {
-		//strcpy(stext, "dwm-"VERSION);
-		read_statusbar_text(stext);
+		//read_statusbar_text(stext);
+		stext[0] = '\0';
 	}
 	drawbar(selmon);
+	//XStoreName(dpy, root, stext);
+	//XFlush(dpy);
 }
 
 void
@@ -2204,6 +2230,9 @@ zoom(const Arg *arg)
 int
 main(int argc, char *argv[])
 {
+	/*pthread_create(&threads[num_threads++], NULL, statusbar, NULL);
+	pthread_join(threads[0], NULL);
+	return EXIT_SUCCESS;*/
 	if (argc == 2 && !strcmp("-v", argv[1]))
 		die("dwm-"VERSION);
 	else if (argc != 1)
