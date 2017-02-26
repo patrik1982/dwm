@@ -60,7 +60,8 @@
 #define WIDTH(X)                ((X)->w + 2 * (X)->bw)
 #define HEIGHT(X)               ((X)->h + 2 * (X)->bw)
 #define TAGMASK                 ((1 << LENGTH(tags)) - 1)
-#define TEXTW(X)                (drw_fontset_getwidth(drw, (X)) + lrpad)
+#define TEXTWNOPAD(X)           (drw_fontset_getwidth(drw, (X)))
+#define TEXTW(X)                (TEXTWNOPAD(X) + lrpad)
 #define ColBorder               2
 
 /* enums */
@@ -72,6 +73,8 @@ enum { NetSupported, NetWMName, NetWMState, NetWMCheck,
 enum { WMProtocols, WMDelete, WMState, WMTakeFocus, WMLast }; /* default atoms */
 enum { ClkTagBar, ClkLtSymbol, ClkStatusText, ClkWinTitle,
        ClkClientWin, ClkRootWin, ClkLast }; /* clicks */
+
+typedef enum {false, true} bool;
 
 typedef union {
 	int i;
@@ -280,8 +283,8 @@ static Window root, wmcheckwin;
 /* compile-time check if all tags fit into an unsigned int bit array. */
 struct NumTags { char limitexceeded[LENGTH(tags) > 31 ? -1 : 1]; };
 
-static int updcnt = 0;
-pthread_t threads[5];
+#define MAX_THREADS	5
+pthread_t threads[MAX_THREADS];
 static int num_threads = 0;
 
 void *statusbar() {
@@ -291,7 +294,6 @@ void *statusbar() {
 	struct tm* timeinfo;
 
 	for(;;) {
-		//updcnt += 1;
 
 		time(&rawtime);
 		timeinfo = localtime(&rawtime);
@@ -319,45 +321,15 @@ void *statusbar() {
 		sprintf(cpustr, "%d%%", load_percentage);
 		fclose(cpuf);
 
-		// Read memory usage
-		strcat(statusbar_text, " \uf2dc "); // Memory
-		char *memstr = &statusbar_text[strlen(statusbar_text)];
-		FILE *memf = fopen("/proc/meminfo", "r");
-		char this_string[100];
-		int total = 0;
-		int used  = 0;
-		int data;
-		int status = 0;
-		while(fscanf(memf, "%s", this_string) != EOF && status != 0x0f) {
-			if (strcmp(this_string, "MemTotal:") == 0) {
-				fscanf(memf, "%d", &data);
-				total = data;
-				used += data;
-				status |= 0x01;
-			}
-			if (strcmp(this_string, "MemFree:") == 0) {
-				fscanf(memf, "%d", &data);
-				used -= data;
-				status |= 0x02;
-			}
-			if (strcmp(this_string, "Buffers:") == 0) {
-				fscanf(memf, "%d", &data);
-				used -= data;
-				status |= 0x04;
-			}
-			if (strcmp(this_string, "Cached:") == 0) {
-				fscanf(memf, "%d", &data);
-				used -= data;
-				status |= 0x08;
-			}
-		}
-		fclose(memf);
-		sprintf(memstr, "%d%%", used * 100 / total);
-		//sprintf(memstr, "%d times", updcnt);
+		// Read hostname
+		strcat(statusbar_text, " @");
+		char *hoststr = &statusbar_text[strlen(statusbar_text)];
+		gethostname(hoststr, 100);
+		sprintf(hoststr, "%s", hoststr);
 
 		XStoreName(dpy, root, statusbar_text);
 		XFlush(dpy);
-		//printf("%s\n", statusbar_text);
+
 		sleep(1);
 	}
 
@@ -801,19 +773,72 @@ drawbar(Monitor *m)
 			urg |= c->tags;
 	}
 	x = 0;
+
+	char separator[100];
 	for (i = 0; i < LENGTH(tags); i++) {
-		w = TEXTW(tags[i]);
-		drw_setscheme(drw, scheme[m->tagset[m->seltags] & 1 << i ? SchemeSel : SchemeNorm]);
-		drw_text(drw, x, 0, w, bh, lrpad / 2, tags[i], urg & 1 << i);
-		if (occ & 1 << i)
-			drw_rect(drw, x + boxs, boxs, boxw, boxw,
-			         m == selmon && selmon->sel && selmon->sel->tags & 1 << i,
-			         urg & 1 << i);
-		x += w;
+
+		bool is_current_tag = m->tagset[m->seltags] & 1 << i;
+		bool next_is_current_tag;
+		if (i < LENGTH(tags) - 1) {
+			next_is_current_tag = (m->tagset[m->seltags] & 1 << (i+1)) > 0;
+		} else {
+			next_is_current_tag = false;
+		}
+
+		if (is_current_tag) {
+			w = TEXTW(tags[i]);
+			drw_setscheme(drw, scheme[SchemeNorm]);
+			drw_text(drw, x, 0, w, bh, lrpad / 2, tags[i], 1);
+			x += w;
+			// Add separator, filled triangle - unless last tag
+			if (i != LENGTH(tags) - 1) {
+				strcpy(separator, "\ue0b0");
+				w = TEXTWNOPAD(separator);
+				drw_setscheme(drw, scheme[SchemeNorm]);
+				drw_text(drw, x, 0, w, bh, 0, separator, 0);
+			} else {
+				strcpy(separator, "\ue0b1");
+				w = TEXTWNOPAD(separator);
+				drw_setscheme(drw, scheme[SchemeNorm]);
+				drw_text(drw, x, 0, w, bh, 0, separator, 1);
+			}
+			x += w;
+		} else {
+			w = TEXTW(tags[i]);
+			drw_setscheme(drw, scheme[SchemeNorm]);
+			drw_text(drw, x, 0, w, bh, lrpad / 2, tags[i], 0);
+			x += w;
+			// Add separator, unfilled triangle - but filled (inverted) triangle is next tag is the current one
+			if (next_is_current_tag || i == LENGTH(tags) - 1) {
+				strcpy(separator, "\ue0b0");
+				w = TEXTWNOPAD(separator);
+				drw_setscheme(drw, scheme[SchemeNorm]);
+				drw_text(drw, x, 0, w, bh, 0, separator, 1);
+			} else {
+				strcpy(separator, "\ue0b1");
+				w = TEXTWNOPAD(separator);
+				drw_setscheme(drw, scheme[SchemeNorm]);
+				drw_text(drw, x, 0, w, bh, 0, separator, 0);
+			}
+			x += w;
+		}
 	}
+
+	strcpy(separator, "\ue0b1");
+	w = TEXTWNOPAD(separator);
+	drw_setscheme(drw, scheme[SchemeNorm]);
+	drw_text(drw, x, 0, w, bh, 0, separator, 1);
+	x += w;
+
 	w = blw = TEXTW(m->ltsymbol);
 	drw_setscheme(drw, scheme[SchemeNorm]);
-	x = drw_text(drw, x, 0, w, bh, lrpad / 2, m->ltsymbol, 0);
+	x = drw_text(drw, x, 0, w, bh, lrpad / 2, m->ltsymbol, 1);
+
+	strcpy(separator, "\ue0b0");
+	w = TEXTWNOPAD(separator);
+	drw_setscheme(drw, scheme[SchemeNorm]);
+	drw_text(drw, x, 0, w, bh, 0, separator, 0);
+	x += w;
 
 	if ((w = m->ww - sw - x) > bh) {
 		if (m->sel) {
@@ -1639,7 +1664,7 @@ setup(void)
 	if (!drw_fontset_create(drw, fonts, LENGTH(fonts)))
 		die("no fonts could be loaded.");
 	lrpad = drw->fonts->h;
-	bh = drw->fonts->h + 2;
+	bh = drw->fonts->h + 0;
 	updategeom();
 	/* init atoms */
 	utf8string = XInternAtom(dpy, "UTF8_STRING", False);
