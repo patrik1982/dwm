@@ -31,9 +31,10 @@ static const Rule rules[] = {
 	 *	WM_CLASS(STRING) = instance, class
 	 *	WM_NAME(STRING) = title
 	 */
-	/* class      instance    title       tags mask     isfloating   monitor */
-//	{ "Gimp",     NULL,       NULL,       0,            1,           -1 },
-//	{ "Firefox",  NULL,       NULL,       1 << 8,       0,           -1 },
+	/* class   instance           title  tags mask  isfloating   monitor      x     y     w     h  */
+//	{ "Gimp",     NULL,           NULL,         0,          1,        -1 },
+//	{ "Firefox",  NULL,           NULL,    1 << 8,          0,         -1 },
+    { NULL,       NULL, "emacs@ubuntu",         0,          1,        -1,  200,  100,  400,  300 },
 };
 
 /* layout(s) */
@@ -44,7 +45,7 @@ static const int resizehints = 1;    /* 1 means respect size hints in tiled resi
 static const Layout layouts[] = {
 	/* symbol     arrange function */
 	{ "\uf009 ",   tile },    /* first entry is default */
-	{ "><> ",      NULL },    /* no layout function means floating behavior */
+	{ "\uf00a ",      NULL },    /* no layout function means floating behavior */
 	{ "[M] ",      monocle },
 };
 

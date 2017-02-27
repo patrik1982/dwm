@@ -148,6 +148,10 @@ typedef struct {
 	unsigned int tags;
 	int isfloating;
 	int monitor;
+	int x;
+	int y;
+	int w;
+	int h;
 } Rule;
 
 /* function declarations */
@@ -364,6 +368,14 @@ applyrules(Client *c)
 			for (m = mons; m && m->num != r->monitor; m = m->next);
 			if (m)
 				c->mon = m;
+			if (r->x >= 0)
+				c->x = r->x;
+			if (r->y >= 0)
+				c->y = r->y;
+			if (r->w > 1)
+				c->w = r->w;
+			if (r->h > 1)
+				c->h = r->h;
 		}
 	}
 	if (ch.res_class)
@@ -2255,9 +2267,6 @@ zoom(const Arg *arg)
 int
 main(int argc, char *argv[])
 {
-	/*pthread_create(&threads[num_threads++], NULL, statusbar, NULL);
-	pthread_join(threads[0], NULL);
-	return EXIT_SUCCESS;*/
 	if (argc == 2 && !strcmp("-v", argv[1]))
 		die("dwm-"VERSION);
 	else if (argc != 1)
