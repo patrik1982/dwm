@@ -32,7 +32,6 @@
 #include <sys/wait.h>
 
 #include <pthread.h>
-
 #include <time.h>
 
 #include <X11/cursorfont.h>
@@ -291,9 +290,10 @@ struct NumTags { char limitexceeded[LENGTH(tags) > 31 ? -1 : 1]; };
 pthread_t threads[MAX_THREADS];
 static int num_threads = 0;
 
+char statusbar_data[5][100];
+
 void *statusbar() {
 
-	char statusbar_text[500];
 	time_t rawtime;
 	struct tm* timeinfo;
 
@@ -302,37 +302,24 @@ void *statusbar() {
 		time(&rawtime);
 		timeinfo = localtime(&rawtime);
 
-		statusbar_text[0] = '\0';
-
 		// Read date
-		strcat(statusbar_text, " \uf073 "); // Calendar
-		char *datestr = &statusbar_text[strlen(statusbar_text)];
-		strftime(datestr, 100, "%a, %b %d", timeinfo);
+		strftime(statusbar_data[0], 100, " \uf073 %a, %b %d", timeinfo);
 
 		// Read time
-		strcat(statusbar_text, " \uf017 "); // Clock
-		char *timestr = &statusbar_text[strlen(statusbar_text)];
-		strftime(timestr, 100, "%R", timeinfo);
+		strftime(statusbar_data[1], 100, " \uf017 %R", timeinfo);
 
 		// Read average CPU load
-		strcat(statusbar_text, " \uf2db "); // Cpu
-		char *cpustr = &statusbar_text[strlen(statusbar_text)];
+		statusbar_data[2][0] = '\0';
 		FILE *cpuf = fopen("/proc/loadavg", "r");
 		float load;
-		int load_percentage;
 		fscanf(cpuf, "%f", &load);
-		load_percentage = (int)(load * 100 / (float)sysconf(_SC_NPROCESSORS_ONLN));
-		sprintf(cpustr, "%d%%", load_percentage);
+		int load_percentage = (int)(load * 100 / (float)sysconf(_SC_NPROCESSORS_ONLN));
+		sprintf(statusbar_data[2], " \uf2db %d%%", load_percentage);
 		fclose(cpuf);
 
 		// Read hostname
-		strcat(statusbar_text, " @");
-		char *hoststr = &statusbar_text[strlen(statusbar_text)];
-		gethostname(hoststr, 100);
-		sprintf(hoststr, "%s", hoststr);
-
-		XStoreName(dpy, root, statusbar_text);
-		XFlush(dpy);
+		statusbar_data[3][0] = ' ';
+		gethostname(&statusbar_data[3][1], 100);
 
 		sleep(1);
 	}
@@ -767,15 +754,21 @@ void
 drawbar(Monitor *m)
 {
 	int x, w, sw = 0;
+	int xtray;
 	int boxs = drw->fonts->h / 9;
 	int boxw = drw->fonts->h / 6 + 2;
 	unsigned int i, occ = 0, urg = 0;
 	Client *c;
 
+	char ttext[500];
 	/* draw status first so it can be overdrawn by tags later */
+	strcpy(ttext, statusbar_data[0]);
+	strcat(ttext, statusbar_data[1]);
+	strcat(ttext, statusbar_data[2]);
+	strcat(ttext, statusbar_data[3]);
 	if (m == selmon) { /* status is only drawn on selected monitor */
 		drw_setscheme(drw, scheme[SchemeNorm]);
-		sw = TEXTW(stext) - lrpad + 2; /* 2px right padding */
+		sw = TEXTW(ttext) - lrpad + 2; /* 2px right padding */
 		drw_text(drw, m->ww - sw, 0, sw, bh, 0, stext, 0);
 	}
 
@@ -846,13 +839,40 @@ drawbar(Monitor *m)
 	drw_setscheme(drw, scheme[SchemeNorm]);
 	x = drw_text(drw, x, 0, w, bh, lrpad / 2, m->ltsymbol, 1);
 
-	strcpy(separator, "\ue0b0");
+	strcpy(separator, "\ue0b0\ue0b1 ");
 	w = TEXTWNOPAD(separator);
 	drw_setscheme(drw, scheme[SchemeNorm]);
 	drw_text(drw, x, 0, w, bh, 0, separator, 0);
 	x += w;
 
-	if ((w = m->ww - sw - x) > bh) {
+	xtray = m->ww;
+	char currstr[50];
+	for (int j = 3; j >= 0; --j) {
+
+		strcpy(currstr, statusbar_data[j]);
+		w = TEXTW(currstr);
+		xtray -= w;
+		drw_setscheme(drw, scheme[SchemeNorm]);
+
+		if (j % 2 == 0) {
+			// Inverted text
+			drw_text(drw, xtray, 0, w, bh, lrpad / 2, currstr, 1);
+			strcpy(separator, "\ue0b3\ue0b2");
+			w = TEXTWNOPAD(separator);
+			xtray -= w;
+			drw_setscheme(drw, scheme[SchemeNorm]);
+			drw_text(drw, xtray, 0, w, bh, 0, separator, 0);
+		} else {
+			drw_text(drw, xtray, 0, w, bh, lrpad / 2, currstr, 0);
+			strcpy(separator, "\ue0b3\ue0b2");
+			w = TEXTWNOPAD(separator);
+			xtray -= w;
+			drw_setscheme(drw, scheme[SchemeNorm]);
+			drw_text(drw, xtray, 0, w, bh, 0, separator, 1);
+		}
+	}
+
+	if ((w = xtray - x) > bh) {
 		if (m->sel) {
 			drw_setscheme(drw, scheme[m == selmon ? SchemeSel : SchemeNorm]);
 			drw_text(drw, x, 0, w, bh, lrpad / 2, m->sel->name, 0);
@@ -863,6 +883,7 @@ drawbar(Monitor *m)
 			drw_rect(drw, x, 0, w, bh, 1, 1);
 		}
 	}
+
 	drw_map(drw, m->barwin, 0, 0, m->ww, bh);
 }
 
@@ -2132,13 +2153,7 @@ updatetitle(Client *c)
 void
 updatestatus(void)
 {
-	if (!gettextprop(root, XA_WM_NAME, stext, sizeof(stext))) {
-		//read_statusbar_text(stext);
-		stext[0] = '\0';
-	}
 	drawbar(selmon);
-	//XStoreName(dpy, root, stext);
-	//XFlush(dpy);
 }
 
 void
